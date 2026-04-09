@@ -1985,6 +1985,25 @@ private:
                 } break;
         }
     }
+    static const char * cache_reuse_reject_reason_str(
+        const llama_model * model,
+        const common_params & params_base) {
+    const bool has_swa = llama_model_n_swa(model) > 0;
+
+    if (has_swa && !params_base.swa_full) {
+        return "swa_window_or_hybrid_memory";
+    }
+
+    if (llama_model_is_recurrent(model)) {
+        return "recurrent_memory";
+    }
+
+    if (llama_model_is_hybrid(model)) {
+        return "hybrid_memory";
+    }
+
+    return "cache_data_unavailable";
+}
 
     void update_slots() {
         // check if all slots are idle
@@ -2430,8 +2449,27 @@ private:
                                     }
 
                                     if (do_reset) {
-                                        SLT_WRN(slot, "forcing full prompt re-processing due to lack of cache data (likely due to SWA or hybrid/recurrent memory, see %s)\n",
+                                        const char * reuse_reason = cache_reuse_reject_reason_str(model, params_base);
+                                    
+                                        SLT_WRN(slot,
+                                                "forcing full prompt re-processing: cache reuse rejected "
+                                                "(reason=%s, n_keep=%d, n_prompt_tokens=%d, n_prompt_tokens_cache=%d, "
+                                                "n_prompt_tokens_processed=%d, pos_next=%d, pos_min=%d, n_past=%d, "
+                                                "model_n_swa=%d, model_is_hybrid=%s, model_is_recurrent=%s, swa_full=%s, see %s)\n",
+                                                reuse_reason,
+                                                slot.task ? slot.task->params.n_keep : -1,
+                                                slot.prompt.n_tokens(),
+                                                slot.n_prompt_tokens_cache,
+                                                slot.n_prompt_tokens_processed,
+                                                pos_next,
+                                                pos_min,
+                                                n_past,
+                                                llama_model_n_swa(model),
+                                                llama_model_is_hybrid(model) ? "true" : "false",
+                                                llama_model_is_recurrent(model) ? "true" : "false",
+                                                params_base.swa_full ? "true" : "false",
                                                 "https://github.com/ggml-org/llama.cpp/pull/13194#issuecomment-2868343055");
+                                    
                                         pos_next = 0;
                                         n_past = 0;
                                     }
